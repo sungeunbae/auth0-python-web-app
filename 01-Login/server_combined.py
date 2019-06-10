@@ -50,17 +50,18 @@ AUTH0_CLIENT_SECRET = env.get(constants.AUTH0_CLIENT_SECRET)
 AUTH0_DOMAIN = env.get(constants.AUTH0_DOMAIN)
 AUTH0_BASE_URL = 'https://' + AUTH0_DOMAIN
 AUTH0_AUDIENCE = env.get(constants.AUTH0_AUDIENCE)
-if AUTH0_AUDIENCE is '':
-    AUTH0_AUDIENCE = AUTH0_BASE_URL + '/userinfo'
-AUTH0_AUDIENCE="http://localhost:3000/api" #Not sure if we need both audiences..
-SCOPE = 'openid profile read:messages'
+#if AUTH0_AUDIENCE is '':
+#    AUTH0_AUDIENCE = AUTH0_BASE_URL + '/userinfo'
+#AUTH0_AUDIENCE="http://localhost:3000/api" #Not sure if we need both audiences..
+AUTH0_AUDIENCE="organize"
+SCOPE = 'openid profile read:calendar read:contacts'
 JWT_PAYLOAD = 'jwt_payload'
 
 ISSUER = "https://"+AUTH0_DOMAIN+"/"
 #Needs API setup  https://auth0.com/docs/quickstart/backend/python#validate-access-tokens
-API_IDENTIFIER="http://localhost:3000/api"
+#API_AUDIENCE="http://localhost:3000/api"
+API_AUDIENCE=AUTH0_AUDIENCE
 
-API_AUDIENCE=API_IDENTIFIER
 
 JWT_VERIFY_DEFAULTS = {
     'verify_signature': True,
@@ -124,6 +125,32 @@ def requires_scope(required_scope):
             raise Exception({"code": "Unauthorized", "description": "You don't have access to this resource"},403)
         return decorated
     return require_scope
+
+#Possibly another way to authorize instead of requesting scope and checking it
+#This doesn't require explicitly specifying scopes such as read:calendar and read:contacts
+#Instead, depending on the user's role and permission, the permission list will be returned
+#To use this, you need to enable Add Permissions in the Access Token in RBAC Settings of API setting
+def requires_permission(required_permission):
+    """Determines if the required permission is present in the access token
+    Args:
+        required_permission (str): The permission required to access the resource
+    """
+    print(required_permission)
+    def require_permission(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            token = session[JWT_PAYLOAD]["access_token"]
+            print(token)
+            unverified_claims = jwt.get_unverified_claims(token)
+            if unverified_claims.get("permissions"):
+                token_permissions = unverified_claims["permissions"]
+                print(token_permissions, len(token_permissions))
+                for token_permission in token_permissions:
+                    if token_permission == required_permission:
+                        return f(*args, **kwargs)
+            raise Exception({"code": "Unauthorized", "description": "You don't have access to this resource"},403)
+        return decorated
+    return require_permission
 
 
 def requires_auth(f):
@@ -226,15 +253,26 @@ def private():
     response = "Hello from a private endpoint! You need to be authenticated to see this."
     return jsonify(message=response)
 
-@app.route("/api/private-scoped")
+@app.route("/api/calendar")
 @cross_origin(headers=["Content-Type", "Authorization"])
 @cross_origin(headers=["Access-Control-Allow-Origin", "http://localhost:3000"])
 @requires_auth
-@requires_scope('read:messages')
-def private_scoped():
+@requires_scope('read:calendar')
+def read_calendar():
     """A valid access token and an appropriate scope are required to access this route
     """
-    response = "Hello! from a private endpoint! You need to be authenticated and have a scope of read:messages to see this."
+    response = "Hello! You are authorized to read calendar"
+    return jsonify(message=response)
+
+@app.route("/api/contacts")
+@cross_origin(headers=["Content-Type", "Authorization"])
+@cross_origin(headers=["Access-Control-Allow-Origin", "http://localhost:3000"])
+@requires_auth
+@requires_scope('read:contacts')
+def read_contacts():
+    """A valid access token and an appropriate scope are required to access this route
+    """
+    response = "Hello! You are authorized to read contacts"
     return jsonify(message=response)
 
 
