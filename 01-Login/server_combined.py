@@ -24,6 +24,7 @@ from flask import render_template
 from flask import session
 from flask import url_for
 from flask import request
+from flask import _request_ctx_stack
 from flask_cors import cross_origin
 
 from authlib.flask.client import OAuth
@@ -59,8 +60,6 @@ JWT_PAYLOAD = 'jwt_payload'
 
 ISSUER = "https://"+AUTH0_DOMAIN+"/"
 #Needs API setup  https://auth0.com/docs/quickstart/backend/python#validate-access-tokens
-#API_AUDIENCE="http://localhost:3000/api"
-API_AUDIENCE=AUTH0_AUDIENCE
 
 
 JWT_VERIFY_DEFAULTS = {
@@ -115,7 +114,7 @@ def requires_scope(required_scope):
         @wraps(f)
         def decorated(*args, **kwargs):
             token = session[JWT_PAYLOAD]["access_token"]
-            print(token)
+#           print(token)
             unverified_claims = jwt.get_unverified_claims(token)
             if unverified_claims.get("scope"):
                 token_scopes = unverified_claims["scope"].split()
@@ -158,6 +157,9 @@ def requires_auth(f):
     def decorated(*args, **kwargs):
         if JWT_PAYLOAD not in session:
             return redirect('/login')
+        token = session[JWT_PAYLOAD]
+        token_decoded = decode_token(token["access_token"])
+        _request_ctx_stack.top.current_user = token_decoded
         return f(*args, **kwargs)
 
     return decorated
@@ -175,10 +177,10 @@ def callback_handling():
 
     #resp = auth0.get('userinfo')
     #userinfo = resp.json()
-    print(token)
+    #print(token)
 
-    token['token_decoded'] = decode_token(token["access_token"])
-    print(token['token_decoded'])
+    token_decoded= decode_token(token["access_token"])
+    print(token_decoded)
     session[JWT_PAYLOAD] = token
     return redirect('/dashboard')
 
@@ -203,16 +205,16 @@ def dashboard():
                            userinfo_pretty=json.dumps(session[JWT_PAYLOAD], indent=4))
 
 def decode_token(token):
-    print("Gonna print the token:", file=sys.stdout)
-    print(jwt.get_unverified_header(token), file=sys.stdout)
-    print(jwt.get_unverified_claims(token), file=sys.stdout)
+#    print("Gonna print the token:", file=sys.stdout)
+#    print(jwt.get_unverified_header(token), file=sys.stdout)
+#    print(jwt.get_unverified_claims(token), file=sys.stdout)
 
     jsonurl = urlopen("https://" + AUTH0_DOMAIN + "/.well-known/jwks.json")
     jwks = json.loads(jsonurl.read())
     try:
         unverified_header = jwt.get_unverified_header(token)
     except Exception as e:
-        print(e)
+        raise(e)
     if unverified_header["alg"] == "HS256":
         raise Exception({"code": "invalid_header",
                          "description":
@@ -229,11 +231,30 @@ def decode_token(token):
                 "e": key["e"]
             }
 
-    print(rsa_key)
-    try:
-        return jwt.decode(token, rsa_key, algorithms=[JWT_ALGORITHM], issuer=ISSUER, audience=API_AUDIENCE, options = JWT_VERIFY_DEFAULTS)
-    except JWTError as e:
-        six.raise_from(Unauthorized, e)
+    #print(rsa_key)
+    if rsa_key:
+        try:
+            payload = jwt.decode(token, rsa_key, algorithms=[JWT_ALGORITHM], issuer=ISSUER, audience=AUTH0_AUDIENCE, options = JWT_VERIFY_DEFAULTS)
+        except jwt.ExpiredSignatureError:
+            raise Exception({"code":"token_expired",
+                             "description": "token is expired"}, 401)
+        except jwt.JWTClaimsError:
+            raise Exception({"code": "invalid_claims",
+                             "description":
+                                 "incorrect claims,"
+                                 " please check the audience and issuer"}, 401)
+        except JWTError as e:
+            six.raise_from(Unauthorized, e)
+        except Exception as e:
+            raise Exception({"code": "invalid_header",
+                             "description":
+                                 "Unable to parse authentication"
+                                 " token."}, 401)
+    else:
+        raise Exception({"code": "invalid_header",
+                         "description": "Unable to find appropriate key"}, 401)
+    return payload
+
 
 @app.route("/api/public")
 @cross_origin(headers=["Content-Type", "Authorization"])
