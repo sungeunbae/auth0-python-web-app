@@ -26,7 +26,7 @@ from flask import url_for
 from flask import request
 from flask import _request_ctx_stack
 from flask_cors import cross_origin
-
+from flask_session import Session
 from authlib.flask.client import OAuth
 from six.moves.urllib.parse import urlencode
 from six.moves.urllib.request import urlopen
@@ -77,9 +77,11 @@ JWT_VERIFY_DEFAULTS = {
 }
 
 app = Flask(__name__, static_url_path='/public', static_folder='./public')
-
+SESSION_TYPE='filesystem' 
+app.config.from_object(__name__)
 app.secret_key = constants.SECRET_KEY
 app.debug = True
+Session(app) #supports for Server-side Session. Optional
 
 @app.errorhandler(Exception)
 def handle_auth_error(ex):
@@ -178,10 +180,10 @@ def callback_handling():
 
     resp = auth0.get('userinfo')
     userinfo = resp.json()
-    #print(token)
+    print(token)
 
-    token_decoded= decode_token(token["access_token"])
-    print(token_decoded)
+#    token_decoded= decode_token(token["access_token"])
+#    print(token_decoded)
     session[JWT_PAYLOAD] = userinfo
     session[TOKEN_KEY] = token
     return redirect('/dashboard')
@@ -251,7 +253,7 @@ def decode_token(token):
             raise Exception({"code": "invalid_header",
                              "description":
                                  "Unable to parse authentication"
-                                 " token."}, 401)
+                                 " token or unable to decode."}, 401)
     else:
         raise Exception({"code": "invalid_header",
                          "description": "Unable to find appropriate key"}, 401)
