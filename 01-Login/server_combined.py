@@ -57,6 +57,7 @@ AUTH0_AUDIENCE = env.get(constants.AUTH0_AUDIENCE)
 AUTH0_AUDIENCE="organize"
 SCOPE = 'openid profile read:calendar read:contacts'
 JWT_PAYLOAD = 'jwt_payload'
+TOKEN_KEY = 'auth0_token'
 
 ISSUER = "https://"+AUTH0_DOMAIN+"/"
 #Needs API setup  https://auth0.com/docs/quickstart/backend/python#validate-access-tokens
@@ -113,7 +114,7 @@ def requires_scope(required_scope):
     def require_scope(f):
         @wraps(f)
         def decorated(*args, **kwargs):
-            token = session[JWT_PAYLOAD]["access_token"]
+            token = session[TOKEN_KEY]["access_token"]
 #           print(token)
             unverified_claims = jwt.get_unverified_claims(token)
             if unverified_claims.get("scope"):
@@ -138,7 +139,7 @@ def requires_permission(required_permission):
     def require_permission(f):
         @wraps(f)
         def decorated(*args, **kwargs):
-            token = session[JWT_PAYLOAD]["access_token"]
+            token = session[TOKEN_KEY]["access_token"]
             print(token)
             unverified_claims = jwt.get_unverified_claims(token)
             if unverified_claims.get("permissions"):
@@ -157,9 +158,9 @@ def requires_auth(f):
     def decorated(*args, **kwargs):
         if JWT_PAYLOAD not in session:
             return redirect('/login')
-        token = session[JWT_PAYLOAD]
+        token = session[TOKEN_KEY]
         token_decoded = decode_token(token["access_token"])
-        _request_ctx_stack.top.current_user = token_decoded
+       # _request_ctx_stack.top.current_user = token_decoded
         return f(*args, **kwargs)
 
     return decorated
@@ -175,13 +176,14 @@ def home():
 def callback_handling():
     token = auth0.authorize_access_token()
 
-    #resp = auth0.get('userinfo')
-    #userinfo = resp.json()
+    resp = auth0.get('userinfo')
+    userinfo = resp.json()
     #print(token)
 
     token_decoded= decode_token(token["access_token"])
     print(token_decoded)
-    session[JWT_PAYLOAD] = token
+    session[JWT_PAYLOAD] = userinfo
+    session[TOKEN_KEY] = token
     return redirect('/dashboard')
 
 
