@@ -8,6 +8,19 @@
 #Another interesting example (whose idea hasn't been accommodated)
 #https://github.com/david4096/flask-auth0-example/blob/master/app.py
 
+
+#groups, roles and permissions have been added via Authorization extension.
+#https://auth0.com/docs/extensions/authorization-extension/v2/api-access
+#https://auth0.com/docs/extensions/authorization-extension/v2/implementation/configuration
+#https://auth0.com/docs/extensions/authorization-extension/v2/rules
+#I can now craft a payload like:
+#{'sub': 'auth0|5d02ff42d62afc0c9f9e845f', 'nickname': 'sung.bae', 'name': 'sung.bae@canterbury.ac.nz', 'picture': 'https://s.gravatar.com/avatar/c92f134b284130a6369ca5a41c85cb26?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fsu.png', 'updated_at': '2019-06-14T02:09:10.319Z', 'http://seistech.nz/claims/permissions': ['read:eaonly', 'read:devonly'], 'http://seistech.nz/claims/groups': ['dev', 'ea'], 'http://seistech.nz/claims/roles': ['devRole', 'eaRole']}
+#Note that I have created groups and roles, and permissions for a role. Groups can do nested groups such as dev < ea < (all users) and 
+# assigning a role to a group is adequate to assign permissions to group. ie. devRole is assigned to dev group, eaRole is assigned to ea group
+# then a dev member is automatically authorized to both devRole and eaRole.
+
+#TO DO: Scopes associated with permission are not yet working
+
 """Python Flask WebApp Auth0 integration example
 """
 from functools import wraps
@@ -54,8 +67,9 @@ AUTH0_AUDIENCE = env.get(constants.AUTH0_AUDIENCE)
 #if AUTH0_AUDIENCE is '':
 #    AUTH0_AUDIENCE = AUTH0_BASE_URL + '/userinfo'
 #AUTH0_AUDIENCE="http://localhost:3000/api" #Not sure if we need both audiences..
-AUTH0_AUDIENCE="organize"
-SCOPE = 'openid profile read:calendar read:contacts'
+#AUTH0_AUDIENCE="organize"
+#AUTH0_AUDIENCE="urn:auth0-authz-api"
+SCOPE = 'openid profile groups roles permissions read:eaonly read:devonly' #only openid profile work
 JWT_PAYLOAD = 'jwt_payload'
 TOKEN_KEY = 'auth0_token'
 
@@ -119,6 +133,7 @@ def requires_scope(required_scope):
             token = session[TOKEN_KEY]["access_token"]
 #           print(token)
             unverified_claims = jwt.get_unverified_claims(token)
+            print(unverified_claims)
             if unverified_claims.get("scope"):
                 token_scopes = unverified_claims["scope"].split()
                 for token_scope in token_scopes:
@@ -200,6 +215,23 @@ def logout():
     params = {'returnTo': url_for('home', _external=True), 'client_id': AUTH0_CLIENT_ID}
     return redirect(auth0.api_base_url + '/v2/logout?' + urlencode(params))
 
+@app.route('/groups')
+def groups():
+    payload = session[JWT_PAYLOAD]
+    app_metadata = payload.get('http://seistech.nz/claims/groups')
+    print(app_metadata)
+    response = "groups: "
+    return jsonify(message=response)
+@app.route('/roles')
+def roles():
+    payload = session[JWT_PAYLOAD]
+    print(payload)
+    app_metadata = payload.get('http://seistech.nz/claims/roles')
+    print(app_metadata)
+    response = "roles: "
+    return jsonify(message=response)
+
+
 
 @app.route('/dashboard')
 @requires_auth
@@ -278,26 +310,29 @@ def private():
     response = "Hello from a private endpoint! You need to be authenticated to see this."
     return jsonify(message=response)
 
-@app.route("/api/calendar")
+#################
+# not working yet
+#################
+@app.route("/api/eaonly")
 @cross_origin(headers=["Content-Type", "Authorization"])
 @cross_origin(headers=["Access-Control-Allow-Origin", "http://localhost:3000"])
 @requires_auth
-@requires_scope('read:calendar')
-def read_calendar():
+@requires_scope('read:eaonly')
+def read_eaonly():
     """A valid access token and an appropriate scope are required to access this route
     """
-    response = "Hello! You are authorized to read calendar"
+    response = "Hello! You are authorized to read ea only contents"
     return jsonify(message=response)
 
-@app.route("/api/contacts")
+@app.route("/api/devonly")
 @cross_origin(headers=["Content-Type", "Authorization"])
 @cross_origin(headers=["Access-Control-Allow-Origin", "http://localhost:3000"])
 @requires_auth
-@requires_scope('read:contacts')
-def read_contacts():
+@requires_scope('read:devonly')
+def read_devonly():
     """A valid access token and an appropriate scope are required to access this route
     """
-    response = "Hello! You are authorized to read contacts"
+    response = "Hello! You are authorized to read devonly contents"
     return jsonify(message=response)
 
 
