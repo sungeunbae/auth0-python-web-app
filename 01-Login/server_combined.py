@@ -19,7 +19,8 @@
 # assigning a role to a group is adequate to assign permissions to group. ie. devRole is assigned to dev group, eaRole is assigned to ea group
 # then a dev member is automatically authorized to both devRole and eaRole.
 
-#TO DO: Scopes associated with permission are not yet working
+#Scopes associated with permission are added to the original scope by: 
+#rules given in https://auth0.com/docs/architecture-scenarios/spa-api/part-2
 
 """Python Flask WebApp Auth0 integration example
 """
@@ -104,10 +105,7 @@ def handle_auth_error(ex):
     return response
 
 
-
 oauth = OAuth(app)
-#curl -I "https://dev-0ipkia65.au.auth0.com/authorize?response_type=code&client_id=ZfjHFgOsi7jRQUURCG8yA1cxfAp4qqt5&redirect_uri=http://localhost:3000/callback&scope=openid%20profile%20read:messages&state=xyzABC123&audience=http://localhost:3000/api"
-#
 auth0 = oauth.register(
     'auth0',
     client_id=AUTH0_CLIENT_ID,
@@ -195,6 +193,7 @@ def callback_handling():
 
     resp = auth0.get('userinfo')
     userinfo = resp.json()
+
     print(token)
 
 #    token_decoded= decode_token(token["access_token"])
@@ -218,17 +217,14 @@ def logout():
 @app.route('/groups')
 def groups():
     payload = session[JWT_PAYLOAD]
-    app_metadata = payload.get('http://seistech.nz/claims/groups')
-    print(app_metadata)
-    response = "groups: "
+    groups = payload.get('http://seistech.nz/claims/groups')
+    response = "groups: "+",".join(groups)
     return jsonify(message=response)
 @app.route('/roles')
 def roles():
     payload = session[JWT_PAYLOAD]
-    print(payload)
-    app_metadata = payload.get('http://seistech.nz/claims/roles')
-    print(app_metadata)
-    response = "roles: "
+    roles = payload.get('http://seistech.nz/claims/roles')
+    response = "roles: "+",".join(roles)
     return jsonify(message=response)
 
 
