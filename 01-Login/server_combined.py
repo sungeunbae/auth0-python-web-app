@@ -12,15 +12,19 @@
 #groups, roles and permissions have been added via Authorization extension.
 #https://auth0.com/docs/extensions/authorization-extension/v2/api-access
 #https://auth0.com/docs/extensions/authorization-extension/v2/implementation/configuration
-#https://auth0.com/docs/extensions/authorization-extension/v2/rules
-#I can now craft a payload like:
-#{'sub': 'auth0|5d02ff42d62afc0c9f9e845f', 'nickname': 'sung.bae', 'name': 'sung.bae@canterbury.ac.nz', 'picture': 'https://s.gravatar.com/avatar/c92f134b284130a6369ca5a41c85cb26?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fsu.png', 'updated_at': '2019-06-14T02:09:10.319Z', 'http://seistech.nz/claims/permissions': ['read:eaonly', 'read:devonly'], 'http://seistech.nz/claims/groups': ['dev', 'ea'], 'http://seistech.nz/claims/roles': ['devRole', 'eaRole']}
+
+### Auth0 manual recommends to create the following rules, which seemed unnecessary. No explicit request for scopes is necessary either.
+### #https://auth0.com/docs/extensions/authorization-extension/v2/rules
+### this makes the paryload like the following. Those permissions are added as custom claims, but not as scopes. 
+###{'sub': 'auth0|5d02ff42d62afc0c9f9e845f', 'nickname': 'sung.bae', 'name': 'sung.bae@canterbury.ac.nz', 'picture': 'https://s.gravatar.com/avatar/c92f134b284130a6369ca5a41c85cb26?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fsu.png', 'updated_at': '2019-06-14T02:09:10.319Z', 'http://seistech.nz/claims/permissions': ['read:eaonly', 'read:devonly'], 'http://seistech.nz/claims/groups': ['dev', 'ea'], 'http://seistech.nz/claims/roles': ['devRole', 'eaRole']}
+
+### The rule below updates scope and is better suited to the API protection via scope workflow.
+#Scopes associated with permission are added to the original scope by creating a rule. 
+#rules given in https://auth0.com/docs/architecture-scenarios/spa-api/part-2 ----(*)
+
 #Note that I have created groups and roles, and permissions for a role. Groups can do nested groups such as dev < ea < (all users) and 
 # assigning a role to a group is adequate to assign permissions to group. ie. devRole is assigned to dev group, eaRole is assigned to ea group
 # then a dev member is automatically authorized to both devRole and eaRole.
-
-#Scopes associated with permission are added to the original scope by: 
-#rules given in https://auth0.com/docs/architecture-scenarios/spa-api/part-2
 
 """Python Flask WebApp Auth0 integration example
 """
@@ -65,12 +69,7 @@ AUTH0_CLIENT_SECRET = env.get(constants.AUTH0_CLIENT_SECRET)
 AUTH0_DOMAIN = env.get(constants.AUTH0_DOMAIN)
 AUTH0_BASE_URL = 'https://' + AUTH0_DOMAIN
 AUTH0_AUDIENCE = env.get(constants.AUTH0_AUDIENCE)
-#if AUTH0_AUDIENCE is '':
-#    AUTH0_AUDIENCE = AUTH0_BASE_URL + '/userinfo'
-#AUTH0_AUDIENCE="http://localhost:3000/api" #Not sure if we need both audiences..
-#AUTH0_AUDIENCE="organize"
-#AUTH0_AUDIENCE="urn:auth0-authz-api"
-SCOPE = 'openid profile groups roles permissions read:eaonly read:devonly' #only openid profile work
+SCOPE = 'openid profile '# groups roles permissions read:eaonly read:devonly' #we don't need to request all these scopes. All scopes authorized for the user is auto-added by the rule created by (*) above.
 JWT_PAYLOAD = 'jwt_payload'
 TOKEN_KEY = 'auth0_token'
 
@@ -141,32 +140,6 @@ def requires_scope(required_scope):
         return decorated
     return require_scope
 
-#Possibly another way to authorize instead of requesting scope and checking it
-#This doesn't require explicitly specifying scopes such as read:calendar and read:contacts
-#Instead, depending on the user's role and permission, the permission list will be returned
-#To use this, you need to enable Add Permissions in the Access Token in RBAC Settings of API setting
-def requires_permission(required_permission):
-    """Determines if the required permission is present in the access token
-    Args:
-        required_permission (str): The permission required to access the resource
-    """
-    print(required_permission)
-    def require_permission(f):
-        @wraps(f)
-        def decorated(*args, **kwargs):
-            token = session[TOKEN_KEY]["access_token"]
-            print(token)
-            unverified_claims = jwt.get_unverified_claims(token)
-            if unverified_claims.get("permissions"):
-                token_permissions = unverified_claims["permissions"]
-                print(token_permissions, len(token_permissions))
-                for token_permission in token_permissions:
-                    if token_permission == required_permission:
-                        return f(*args, **kwargs)
-            raise Exception({"code": "Unauthorized", "description": "You don't have access to this resource"},403)
-        return decorated
-    return require_permission
-
 
 def requires_auth(f):
     @wraps(f)
@@ -175,7 +148,7 @@ def requires_auth(f):
             return redirect('/login')
         token = session[TOKEN_KEY]
         token_decoded = decode_token(token["access_token"])
-       # _request_ctx_stack.top.current_user = token_decoded
+       # _request_ctx_stack.top.current_user = token_decoded #not sure about this one - seems unnecessary.
         return f(*args, **kwargs)
 
     return decorated
@@ -214,19 +187,21 @@ def logout():
     params = {'returnTo': url_for('home', _external=True), 'client_id': AUTH0_CLIENT_ID}
     return redirect(auth0.api_base_url + '/v2/logout?' + urlencode(params))
 
-@app.route('/groups')
-def groups():
-    payload = session[JWT_PAYLOAD]
-    groups = payload.get('http://seistech.nz/claims/groups')
-    response = "groups: "+",".join(groups)
-    return jsonify(message=response)
-@app.route('/roles')
-def roles():
-    payload = session[JWT_PAYLOAD]
-    roles = payload.get('http://seistech.nz/claims/roles')
-    response = "roles: "+",".join(roles)
-    return jsonify(message=response)
-
+# the following APIs are only possible if you created the rules for custome claims. 
+#@app.route('/groups')
+#def groups():
+#    payload = session[JWT_PAYLOAD]
+#    groups = payload.get('http://seistech.nz/claims/groups')
+#    response = "groups: "+",".join(groups)
+#    return jsonify(message=response)
+#
+#@app.route('/roles')
+#def roles():
+#    payload = session[JWT_PAYLOAD]
+#    roles = payload.get('http://seistech.nz/claims/roles')
+#    response = "roles: "+",".join(roles)
+#    return jsonify(message=response)
+#
 
 
 @app.route('/dashboard')
@@ -306,9 +281,6 @@ def private():
     response = "Hello from a private endpoint! You need to be authenticated to see this."
     return jsonify(message=response)
 
-#################
-# not working yet
-#################
 @app.route("/api/eaonly")
 @cross_origin(headers=["Content-Type", "Authorization"])
 @cross_origin(headers=["Access-Control-Allow-Origin", "http://localhost:3000"])
